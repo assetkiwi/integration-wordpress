@@ -173,17 +173,29 @@
 	// Extend wp.media.view.MediaFrame.Select to add our tab
 	// -------------------------------------------------------------------------
 
-	var originalOpen = wp.media.view.MediaFrame.Select.prototype.open;
+	var OrigMediaFrameSelect = wp.media.view.MediaFrame.Select;
 
-	wp.media.view.MediaFrame.Select = wp.media.view.MediaFrame.Select.extend( {
+	wp.media.view.MediaFrame.Select = OrigMediaFrameSelect.extend( {
 		initialize: function () {
-			wp.media.view.MediaFrame.Select.prototype.initialize.apply( this, arguments );
+			OrigMediaFrameSelect.prototype.initialize.apply( this, arguments );
 
 			this.states.add( new AssetKiwiBrowserState() );
 
 			this.on( 'content:render:assetkiwi-browser', this.renderAssetKiwiContent, this );
 			this.on( 'toolbar:render:assetkiwi-select', this.renderAssetKiwiToolbar, this );
 			this.on( 'assetkiwi:insert', this.onAssetKiwiInsert, this );
+		},
+
+		browseRouter: function ( routerView ) {
+			if ( OrigMediaFrameSelect.prototype.browseRouter ) {
+				OrigMediaFrameSelect.prototype.browseRouter.apply( this, arguments );
+			}
+			routerView.set( {
+				'assetkiwi-browser': {
+					text:     assetkiwiMedia.i18n.tabLabel,
+					priority: 60,
+				},
+			} );
 		},
 
 		renderAssetKiwiContent: function () {
@@ -235,29 +247,6 @@
 
 			// Fallback: trigger the standard insert event.
 			self.trigger( 'insert', selection || [ attachment ] ).close();
-		},
-	} );
-
-	// -------------------------------------------------------------------------
-	// Add asset.kiwi tab to the router (secondary nav inside the modal)
-	// -------------------------------------------------------------------------
-
-	$( document ).on( 'click', '.media-router .media-menu-item', function () {
-		// Handled automatically by the state system above.
-	} );
-
-	// Inject the tab button when the media modal router renders.
-	wp.media.view.MediaFrame.Select = wp.media.view.MediaFrame.Select.extend( {
-		browseRouter: function ( routerView ) {
-			if ( this.__proto__.__proto__.browseRouter ) {
-				this.__proto__.__proto__.browseRouter.apply( this, arguments );
-			}
-			routerView.set( {
-				'assetkiwi-browser': {
-					text:     assetkiwiMedia.i18n.tabLabel,
-					priority: 60,
-				},
-			} );
 		},
 	} );
 

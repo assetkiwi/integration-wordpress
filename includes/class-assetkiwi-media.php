@@ -96,8 +96,8 @@ class AssetKiwi_Media {
 		$response    = $client->get_assets( $params );
 		$assets      = $response['data'] ?? array();
 		$pager       = $client->normalize_pager( $response, $params['page'] );
-		$collections = $client->get_collections();
-		$tags        = $client->get_tags();
+		$collections = ( $client->get_collections() )['data'] ?? array();
+		$tags        = ( $client->get_tags() )['data'] ?? array();
 
 		ob_start();
 		include ASSETKIWI_PLUGIN_DIR . 'templates/media-browser.php';
@@ -108,8 +108,8 @@ class AssetKiwi_Media {
 				'html'        => $html,
 				'assets'      => $assets,
 				'pager'       => $pager,
-				'collections' => $collections['data'] ?? $collections,
-				'tags'        => $tags['data'] ?? $tags,
+				'collections' => $collections,
+				'tags'        => $tags,
 			)
 		);
 	}
@@ -155,9 +155,90 @@ class AssetKiwi_Media {
 		);
 	}
 
-	// -------------------------------------------------------------------------
-	// Attachment helpers
-	// -------------------------------------------------------------------------
+ 	// -------------------------------------------------------------------------
+ 	// DynamicDelivery helpers
+ 	// -------------------------------------------------------------------------
+
+ 	/**
+ 	 * Resolve a display URL for an asset, preferring DynamicDelivery
+ 	 * transforms for images when a width is provided.
+ 	 *
+ 	 * When $width is provided, the returned URL is a DynamicDelivery
+ 	 * transform URL that resizes on-the-fly (no pre-generation needed).
+ 	 * Falls back to the nearest matching variant URL for non-image mime
+ 	 * types or when DynamicDelivery is not available.
+ 	 *
+ 	 * @param array $asset Normalized asset array.
+ 	 * @param int   $width Desired width in pixels (0 = no transform).
+ 	 * @return string|null Asset URL, or null if none found.
+ 	 */
+ 	public function resolve_asset_display_url( array $asset, int $width = 0 ): ?string {
+ 		$client = assetkiwi_client();
+ 		$uuid   = $asset['uuid'] ?? '';
+
+ 		if ( ! $uuid ) {
+ 			return null;
+ 		}
+
+ 		$is_image = str_starts_with( $asset['mime_type'] ?? '', 'image/' );
+
+ 		// Use DynamicDelivery for image assets with a requested width.
+ 		if ( $is_image && $width > 0 ) {
+ 			return $client->get_transform_url(
+ 				$uuid,
+ 				array(
+ 					'w'      => $width,
+ 					'format' => 'auto',
+ 				)
+ 			);
+ 		}
+
+ 		// Fall back to the variant URL or original asset URL.
+ 		return $asset['url'] ?? (
+ 			( $asset['variants'][0]['url'] ?? '' ) ?: null
+ 		);
+ 	}
+
+ 	/**
+ 	 * Resolve a thumbnail URL for the media browser grid, preferring
+ 	 * DynamicDelivery with a 300px width for images.
+ 	 *
+ 	 * Falls back to searching for a "thumb" or "thumbnail" variant,
+ 	 * then the original asset URL.
+ 	 *
+ 	 * @param array $asset Normalized asset array.
+ 	 * @return string Thumbnail URL.
+ 	 */
+ 	public function resolve_asset_thumbnail_url( array $asset ): string {
+ 		$client = assetkiwi_client();
+ 		$uuid   = $asset['uuid'] ?? '';
+
+ 		$is_image = str_starts_with( $asset['mime_type'] ?? '', 'image/' );
+
+ 		// Use DynamicDelivery for image assets.
+ 		if ( $is_image && $uuid ) {
+ 			return $client->get_transform_url(
+ 				$uuid,
+ 				array(
+ 					'w'      => 300,
+ 					'format' => 'auto',
+ 				)
+ 			);
+ 		}
+
+ 		// Fall back to variant search.
+ 		foreach ( $asset['variants'] ?? array() as $variant ) {
+ 			if ( in_array( $variant['variant_name'] ?? '', array( 'thumb', 'thumbnail', 'small' ), true ) ) {
+ 				return $variant['url'] ?? '';
+ 			}
+ 		}
+
+ 		return $asset['url'] ?? '';
+ 	}
+
+ 	// -------------------------------------------------------------------------
+ 	// Attachment helpers
+ 	// -------------------------------------------------------------------------
 
 	/**
 	 * Returns an existing attachment for this DAM UUID or creates a stub one.
@@ -206,7 +287,11 @@ class AssetKiwi_Media {
 		update_post_meta( $attachment_id, '_assetkiwi_url', $asset['url'] ?? '' );
 		update_post_meta( $attachment_id, '_assetkiwi_variants', $asset['variants'] ?? array() );
 		update_post_meta( $attachment_id, '_wp_attachment_metadata', $this->build_attachment_metadata( $asset ) );
-		update_post_meta( $attachment_id, '_wp_attached_file', $asset['filename'] ?? '' );
+		// Deliberately not setting _wp_attached_file: wp_get_attachment_url()
+		// only falls back to the guid (the correct asset.kiwi URL, set above)
+		// when this meta key is absent. A bare filename here isn't a relative
+		// uploads-dir path, so it doesn't trigger that fallback — it produces
+		// a broken local URL instead.
 
 		if ( ! empty( $asset['alt_text'] ) ) {
 			update_post_meta( $attachment_id, '_wp_attachment_image_alt', $asset['alt_text'] );

@@ -27,6 +27,14 @@ class AssetKiwi_Settings {
 		register_setting( 'assetkiwi_settings', 'assetkiwi_api_token', array( 'sanitize_callback' => 'sanitize_text_field' ) );
 		register_setting( 'assetkiwi_settings', 'assetkiwi_webhook_secret', array( 'sanitize_callback' => 'sanitize_text_field' ) );
 
+		// OAuth2 settings.
+		register_setting( 'assetkiwi_settings', 'assetkiwi_oauth_mode', array( 'sanitize_callback' => 'sanitize_text_field' ) );
+		register_setting( 'assetkiwi_settings', 'assetkiwi_oauth_client_id', array( 'sanitize_callback' => 'sanitize_text_field' ) );
+		register_setting( 'assetkiwi_settings', 'assetkiwi_oauth_client_secret', array( 'sanitize_callback' => 'sanitize_text_field' ) );
+		register_setting( 'assetkiwi_settings', 'assetkiwi_oauth_authorize_url', array( 'sanitize_callback' => 'esc_url_raw' ) );
+		register_setting( 'assetkiwi_settings', 'assetkiwi_oauth_token_url', array( 'sanitize_callback' => 'esc_url_raw' ) );
+		register_setting( 'assetkiwi_settings', 'assetkiwi_oauth_scopes', array( 'sanitize_callback' => array( $this, 'sanitize_oauth_scopes' ) ) );
+
 		add_settings_section( 'assetkiwi_main', __( 'API Connection', 'assetkiwi-connect' ), '__return_false', 'assetkiwi-connect' );
 
 		add_settings_field(
@@ -50,6 +58,52 @@ class AssetKiwi_Settings {
 			'assetkiwi-connect',
 			'assetkiwi_main'
 		);
+
+		// OAuth section.
+		add_settings_section( 'assetkiwi_oauth', __( 'OAuth2 Authentication', 'assetkiwi-connect' ), array( $this, 'section_oauth' ), 'assetkiwi-connect' );
+
+		add_settings_field(
+			'assetkiwi_oauth_mode',
+			__( 'Authentication Mode', 'assetkiwi-connect' ),
+			array( $this, 'field_oauth_mode' ),
+			'assetkiwi-connect',
+			'assetkiwi_oauth'
+		);
+		add_settings_field(
+			'assetkiwi_oauth_client_id',
+			__( 'Client ID', 'assetkiwi-connect' ),
+			array( $this, 'field_oauth_client_id' ),
+			'assetkiwi-connect',
+			'assetkiwi_oauth'
+		);
+		add_settings_field(
+			'assetkiwi_oauth_client_secret',
+			__( 'Client Secret', 'assetkiwi-connect' ),
+			array( $this, 'field_oauth_client_secret' ),
+			'assetkiwi-connect',
+			'assetkiwi_oauth'
+		);
+		add_settings_field(
+			'assetkiwi_oauth_authorize_url',
+			__( 'Authorize URL', 'assetkiwi-connect' ),
+			array( $this, 'field_oauth_authorize_url' ),
+			'assetkiwi-connect',
+			'assetkiwi_oauth'
+		);
+		add_settings_field(
+			'assetkiwi_oauth_token_url',
+			__( 'Token URL', 'assetkiwi-connect' ),
+			array( $this, 'field_oauth_token_url' ),
+			'assetkiwi-connect',
+			'assetkiwi_oauth'
+		);
+		add_settings_field(
+			'assetkiwi_oauth_scopes',
+			__( 'Scopes', 'assetkiwi-connect' ),
+			array( $this, 'field_oauth_scopes' ),
+			'assetkiwi-connect',
+			'assetkiwi_oauth'
+		);
 	}
 
 	public function field_api_url(): void {
@@ -71,6 +125,91 @@ class AssetKiwi_Settings {
 			esc_html__( 'Used to verify incoming webhooks. Configure this secret in asset.kiwi and point it at: %s', 'assetkiwi-connect' ),
 			'<code>' . esc_html( rest_url( 'assetkiwi/v1/webhook' ) ) . '</code>'
 		) . '</p>';
+	}
+
+	public function section_oauth(): void {
+		echo '<p class="description">' . esc_html__( 'Optional: configure OAuth2 so each WordPress user gets their own DAM identity. When enabled, users authenticate individually and the API Token above serves only as a fallback.', 'assetkiwi-connect' ) . '</p>';
+	}
+
+	public function field_oauth_mode(): void {
+		$value = get_option( 'assetkiwi_oauth_mode', 'shared_token' );
+		?>
+		<fieldset>
+			<label>
+				<input type="radio" name="assetkiwi_oauth_mode" value="shared_token" <?php checked( $value, 'shared_token' ); ?> />
+				<?php esc_html_e( 'Shared Token', 'assetkiwi-connect' ); ?>
+				<span class="description"><?php esc_html_e( 'All users share the API Token configured above.', 'assetkiwi-connect' ); ?></span>
+			</label>
+			<br />
+			<label>
+				<input type="radio" name="assetkiwi_oauth_mode" value="per_user" <?php checked( $value, 'per_user' ); ?> />
+				<?php esc_html_e( 'Per-User OAuth', 'assetkiwi-connect' ); ?>
+				<span class="description"><?php esc_html_e( 'Each WordPress user authenticates individually via OAuth2.', 'assetkiwi-connect' ); ?></span>
+			</label>
+		</fieldset>
+		<?php
+	}
+
+	public function field_oauth_client_id(): void {
+		$value = esc_attr( get_option( 'assetkiwi_oauth_client_id', '' ) );
+		echo '<input type="text" id="assetkiwi_oauth_client_id" name="assetkiwi_oauth_client_id" value="' . $value . '" class="regular-text assetkiwi-oauth-field" />';
+	}
+
+	public function field_oauth_client_secret(): void {
+		$value = esc_attr( get_option( 'assetkiwi_oauth_client_secret', '' ) );
+		echo '<input type="password" id="assetkiwi_oauth_client_secret" name="assetkiwi_oauth_client_secret" value="' . $value . '" class="regular-text assetkiwi-oauth-field" autocomplete="off" />';
+	}
+
+	public function field_oauth_authorize_url(): void {
+		$value = esc_attr( get_option( 'assetkiwi_oauth_authorize_url', '' ) );
+		echo '<input type="url" id="assetkiwi_oauth_authorize_url" name="assetkiwi_oauth_authorize_url" value="' . $value . '" class="regular-text assetkiwi-oauth-field" placeholder="https://dam.example.com/oauth/authorize" />';
+	}
+
+	public function field_oauth_token_url(): void {
+		$value = esc_attr( get_option( 'assetkiwi_oauth_token_url', '' ) );
+		echo '<input type="url" id="assetkiwi_oauth_token_url" name="assetkiwi_oauth_token_url" value="' . $value . '" class="regular-text assetkiwi-oauth-field" placeholder="https://dam.example.com/oauth/token" />';
+	}
+
+	public function field_oauth_scopes(): void {
+		$current = get_option( 'assetkiwi_oauth_scopes', 'assets:read' );
+		$current = is_string( $current ) ? $current : 'assets:read';
+		$scopes  = array(
+			'assets:read'      => __( 'Read assets', 'assetkiwi-connect' ),
+			'assets:write'     => __( 'Write assets', 'assetkiwi-connect' ),
+			'collections:read' => __( 'Read collections', 'assetkiwi-connect' ),
+			'tags:read'        => __( 'Read tags', 'assetkiwi-connect' ),
+		);
+		$current_scopes = array_flip( explode( ' ', $current ) );
+
+		echo '<fieldset class="assetkiwi-oauth-field">';
+		foreach ( $scopes as $scope => $label ) {
+			$id = 'assetkiwi_oauth_scope_' . str_replace( ':', '_', $scope );
+			printf(
+				'<label style="display:block;margin-bottom:4px;"><input type="checkbox" id="%s" name="%s" value="%s" %s /> %s</label>',
+				esc_attr( $id ),
+				'assetkiwi_oauth_scopes',
+				esc_attr( $scope ),
+				checked( isset( $current_scopes[ $scope ] ), true, false ),
+				esc_html( $label )
+			);
+		}
+		// Hidden input so the form always submits something (checkboxes are absent when unchecked).
+		echo '<input type="hidden" name="assetkiwi_oauth_scopes_submitted" value="1" />';
+		echo '<p class="description">' . esc_html__( 'Scopes requested during OAuth authorization. At minimum, assets:read is recommended.', 'assetkiwi-connect' ) . '</p>';
+		echo '</fieldset>';
+	}
+
+	public function sanitize_oauth_scopes( $value ): string {
+		// When all checkboxes are unchecked, the field is absent from $_POST.
+		// The hidden input 'assetkiwi_oauth_scopes_submitted' tells us the form was submitted.
+		if ( isset( $_POST['assetkiwi_oauth_scopes_submitted'] ) ) {
+			if ( is_array( $value ) ) {
+				return implode( ' ', array_map( 'sanitize_text_field', $value ) );
+			}
+			return '';
+		}
+		// Form not submitted (e.g. programmatic save) — preserve existing value.
+		return get_option( 'assetkiwi_oauth_scopes', 'assets:read' );
 	}
 
 	public function render_page(): void {
@@ -99,28 +238,54 @@ class AssetKiwi_Settings {
 			<span id="assetkiwi-test-result" style="margin-left:12px;"></span>
 
 			<script>
-			document.getElementById('assetkiwi-test-connection').addEventListener('click', function () {
-				var btn    = this;
-				var result = document.getElementById('assetkiwi-test-result');
-				btn.disabled = true;
-				result.textContent = '<?php echo esc_js( __( 'Testing…', 'assetkiwi-connect' ) ); ?>';
+			(function () {
+				var modeRadios = document.querySelectorAll('input[name="assetkiwi_oauth_mode"]');
+				var oauthFields = document.querySelectorAll('.assetkiwi-oauth-field');
 
-				var data = new FormData();
-				data.append('action', 'assetkiwi_test_connection');
-				data.append('nonce', '<?php echo esc_js( wp_create_nonce( 'assetkiwi_test_connection' ) ); ?>');
+				function toggleOAuthFields() {
+					var isPerUser = false;
+					modeRadios.forEach(function (r) {
+						if (r.checked && r.value === 'per_user') {
+							isPerUser = true;
+						}
+					});
+					oauthFields.forEach(function (el) {
+						// Walk up to the nearest table row (tr).
+						var row = el;
+						while (row && row.tagName !== 'TR') { row = row.parentNode; }
+						if (row) { row.style.display = isPerUser ? '' : 'none'; }
+					});
+				}
 
-				fetch(ajaxurl, { method: 'POST', body: data })
-					.then(function (r) { return r.json(); })
-					.then(function (json) {
-						result.textContent = json.data;
-						result.style.color = json.success ? 'green' : 'red';
-					})
-					.catch(function () {
-						result.textContent = '<?php echo esc_js( __( 'Request failed.', 'assetkiwi-connect' ) ); ?>';
-						result.style.color = 'red';
-					})
-					.finally(function () { btn.disabled = false; });
-			});
+				modeRadios.forEach(function (r) {
+					r.addEventListener('change', toggleOAuthFields);
+				});
+				toggleOAuthFields();
+
+				// Test connection button.
+				document.getElementById('assetkiwi-test-connection').addEventListener('click', function () {
+					var btn    = this;
+					var result = document.getElementById('assetkiwi-test-result');
+					btn.disabled = true;
+					result.textContent = '<?php echo esc_js( __( 'Testing…', 'assetkiwi-connect' ) ); ?>';
+
+					var data = new FormData();
+					data.append('action', 'assetkiwi_test_connection');
+					data.append('nonce', '<?php echo esc_js( wp_create_nonce( 'assetkiwi_test_connection' ) ); ?>');
+
+					fetch(ajaxurl, { method: 'POST', body: data })
+						.then(function (r) { return r.json(); })
+						.then(function (json) {
+							result.textContent = json.data;
+							result.style.color = json.success ? 'green' : 'red';
+						})
+						.catch(function () {
+							result.textContent = '<?php echo esc_js( __( 'Request failed.', 'assetkiwi-connect' ) ); ?>';
+							result.style.color = 'red';
+						})
+						.finally(function () { btn.disabled = false; });
+				});
+			})();
 			</script>
 		</div>
 		<?php

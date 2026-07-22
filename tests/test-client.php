@@ -216,6 +216,80 @@ class AssetKiwi_ClientTest extends WPTestCase {
 	}
 
 	// -------------------------------------------------------------------------
+	// upload_asset_for_migration
+	// -------------------------------------------------------------------------
+
+	public function test_upload_asset_for_migration_returns_new_uuid_on_201(): void {
+		$tmp = tempnam( sys_get_temp_dir(), 'akwp_' );
+		file_put_contents( $tmp, 'hello world' );
+
+		WP_Mock::userFunction( 'wp_generate_password' )->andReturn( 'boundary123' );
+		WP_Mock::userFunction( 'wp_remote_post' )->once()->andReturn( array() );
+		WP_Mock::userFunction( 'is_wp_error' )->andReturn( false );
+		WP_Mock::userFunction( 'wp_remote_retrieve_response_code' )->andReturn( 201 );
+		WP_Mock::userFunction( 'wp_remote_retrieve_body' )->andReturn( json_encode( array( 'data' => array( 'uuid' => 'new-uuid' ) ) ) );
+
+		$result = $this->client->upload_asset_for_migration( $tmp, 'photo.jpg', 'image/jpeg' );
+
+		$this->assertSame( array( 'uuid' => 'new-uuid', 'reused' => false ), $result );
+		unlink( $tmp );
+	}
+
+	public function test_upload_asset_for_migration_returns_existing_uuid_on_409_dedup(): void {
+		$tmp = tempnam( sys_get_temp_dir(), 'akwp_' );
+		file_put_contents( $tmp, 'same bytes' );
+
+		WP_Mock::userFunction( 'wp_generate_password' )->andReturn( 'boundary123' );
+		WP_Mock::userFunction( 'wp_remote_post' )->once()->andReturn( array() );
+		WP_Mock::userFunction( 'is_wp_error' )->andReturn( false );
+		WP_Mock::userFunction( 'wp_remote_retrieve_response_code' )->andReturn( 409 );
+		WP_Mock::userFunction( 'wp_remote_retrieve_body' )->andReturn( json_encode( array( 'existing_uuid' => 'existing-uuid' ) ) );
+
+		$result = $this->client->upload_asset_for_migration( $tmp, 'photo.jpg', 'image/jpeg' );
+
+		$this->assertSame( array( 'uuid' => 'existing-uuid', 'reused' => true ), $result );
+		unlink( $tmp );
+	}
+
+	public function test_upload_asset_for_migration_returns_null_on_wp_error(): void {
+		$tmp = tempnam( sys_get_temp_dir(), 'akwp_' );
+		file_put_contents( $tmp, 'data' );
+
+		$error = new WP_Error( 'http_request_failed', 'Connection refused.' );
+		WP_Mock::userFunction( 'wp_generate_password' )->andReturn( 'boundary123' );
+		WP_Mock::userFunction( 'wp_remote_post' )->once()->andReturn( $error );
+		WP_Mock::userFunction( 'is_wp_error' )->andReturn( true );
+
+		$result = $this->client->upload_asset_for_migration( $tmp, 'photo.jpg', 'image/jpeg' );
+
+		$this->assertNull( $result );
+		$this->assertSame( 'Connection refused.', $this->client->get_last_error() );
+		unlink( $tmp );
+	}
+
+	public function test_upload_asset_for_migration_returns_null_when_file_not_readable(): void {
+		$this->assertNull( $this->client->upload_asset_for_migration( '/nonexistent/path.jpg', 'photo.jpg', 'image/jpeg' ) );
+		$this->assertStringContainsString( 'not readable', $this->client->get_last_error() );
+	}
+
+	public function test_upload_asset_for_migration_returns_null_on_server_error(): void {
+		$tmp = tempnam( sys_get_temp_dir(), 'akwp_' );
+		file_put_contents( $tmp, 'data' );
+
+		WP_Mock::userFunction( 'wp_generate_password' )->andReturn( 'boundary123' );
+		WP_Mock::userFunction( 'wp_remote_post' )->once()->andReturn( array() );
+		WP_Mock::userFunction( 'is_wp_error' )->andReturn( false );
+		WP_Mock::userFunction( 'wp_remote_retrieve_response_code' )->andReturn( 422 );
+		WP_Mock::userFunction( 'wp_remote_retrieve_body' )->andReturn( json_encode( array( 'message' => 'No storage profile configured.' ) ) );
+
+		$result = $this->client->upload_asset_for_migration( $tmp, 'photo.jpg', 'image/jpeg' );
+
+		$this->assertNull( $result );
+		$this->assertSame( 'No storage profile configured.', $this->client->get_last_error() );
+		unlink( $tmp );
+	}
+
+	// -------------------------------------------------------------------------
 	// report_usage / remove_usage (smoke tests — no real HTTP)
 	// -------------------------------------------------------------------------
 

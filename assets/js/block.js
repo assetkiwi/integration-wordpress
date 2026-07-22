@@ -80,6 +80,7 @@
 		description: t.blockDescription || 'Embed an asset from asset.kiwi.',
 		category:    'media',
 		icon:        'format-image',
+		apiVersion:  3,
 		supports: {
 			html:    false,
 			align:   [ 'left', 'center', 'right', 'wide', 'full' ],

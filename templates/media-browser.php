@@ -13,6 +13,28 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// --- OAuth2 connect notice ---
+if ( class_exists( 'AssetKiwi_OAuth' ) && AssetKiwi_OAuth::is_enabled() && ! AssetKiwi_OAuth::get_token( get_current_user_id() ) ) {
+	$authorize_url = AssetKiwi_OAuth::get_authorization_url();
+	?>
+	<div class="notice notice-warning inline" style="margin:0 0 16px;">
+		<p>
+			<?php
+			printf(
+				/* translators: %s is the "Connect to asset.kiwi" link with the authorization URL */
+				esc_html__( 'Your asset.kiwi account is not connected. %s', 'assetkiwi-connect' ),
+				sprintf(
+					'<a href="%s" class="button button-small" target="_blank" rel="noopener">%s</a>',
+					esc_url( $authorize_url ),
+					esc_html__( 'Connect to asset.kiwi', 'assetkiwi-connect' )
+				)
+			);
+			?>
+		</p>
+	</div>
+	<?php
+}
+
 $current_page = (int) ( $pager['current_page'] ?? 1 );
 $last_page    = (int) ( $pager['last_page'] ?? 1 );
 $total        = (int) ( $pager['total'] ?? 0 );
@@ -88,19 +110,7 @@ $filter_mime      = sanitize_text_field( $_GET['mime_type'] ?? '' );
 				$uuid      = esc_attr( $asset['uuid'] ?? '' );
 				$name      = esc_html( $asset['original_name'] ?? $asset['filename'] ?? $uuid );
 				$mime      = esc_html( $asset['mime_type'] ?? '' );
-				$thumb_url = '';
-
-				// Prefer a "thumb" or "thumbnail" variant, fall back to asset URL.
-				foreach ( $asset['variants'] ?? array() as $variant ) {
-					if ( in_array( $variant['variant_name'] ?? '', array( 'thumb', 'thumbnail', 'small' ), true ) ) {
-						$thumb_url = $variant['url'] ?? '';
-						break;
-					}
-				}
-				if ( ! $thumb_url ) {
-					$thumb_url = $asset['url'] ?? '';
-				}
-				$thumb_url = esc_url( $thumb_url );
+				$thumb_url = esc_url( $this->resolve_asset_thumbnail_url( $asset ) );
 			?>
 				<div class="assetkiwi-asset-card" data-uuid="<?php echo $uuid; ?>" tabindex="0" role="option" aria-label="<?php echo $name; ?>">
 					<?php if ( $thumb_url && 0 === strpos( $asset['mime_type'] ?? '', 'image/' ) ) : ?>

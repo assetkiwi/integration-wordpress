@@ -8,10 +8,15 @@ class AssetKiwi_Client {
 
 	protected string $api_url;
 	protected string $api_token;
+	protected ?string $last_error = null;
 
 	public function __construct( string $api_url, string $api_token ) {
 		$this->api_url   = rtrim( $api_url, '/' );
 		$this->api_token = $api_token;
+	}
+
+	public function get_last_error(): ?string {
+		return $this->last_error;
 	}
 
 	public function set_credentials( string $api_url, string $api_token ): void {
@@ -19,9 +24,29 @@ class AssetKiwi_Client {
 		$this->api_token = $api_token;
 	}
 
+	/**
+	 * Resolve the API token to use for the current request.
+	 *
+	 * In per-user OAuth mode, prefers the current user's OAuth access token
+	 * and falls back to the shared API token. In shared token mode, always
+	 * returns the shared token.
+	 */
+	private function resolve_api_token(): ?string {
+		if ( ! class_exists( 'AssetKiwi_OAuth' ) || ! AssetKiwi_OAuth::is_enabled() ) {
+			return $this->api_token;
+		}
+
+		$user_id = get_current_user_id();
+		if ( $user_id ) {
+			return AssetKiwi_OAuth::get_token( $user_id ) ?? $this->api_token;
+		}
+
+		return $this->api_token;
+	}
+
 	protected function default_headers(): array {
 		return array(
-			'Authorization' => 'Bearer ' . $this->api_token,
+			'Authorization' => 'Bearer ' . $this->resolve_api_token(),
 			'Accept'        => 'application/json',
 		);
 	}
@@ -102,6 +127,123 @@ class AssetKiwi_Client {
 
 		$code = wp_remote_retrieve_response_code( $response );
 		return ( 200 === $code ) ? wp_remote_retrieve_body( $response ) : null;
+	}
+
+	/**
+	 * Upload a file to asset.kiwi. For migration/offloading use only.
+	 * End-user uploads must happen through the asset.kiwi app directly.
+	 *
+	 * Mirrors the Drupal client's uploadAsset(): relies on core's
+	 * content-addressed dedup (POST /api/v1/assets returns 409 + existing_uuid
+	 * for a byte-identical file already ingested) rather than doing any
+	 * client-side "have I uploaded this before" bookkeeping.
+	 *
+	 * @internal Used by the assetkiwi-connect-migrate plugin.
+	 *
+	 * @return array{uuid: string, reused: bool}|null  Null on failure — call
+	 *   get_last_error() for why.
+	 */
+	public function upload_asset_for_migration( string $file_path, string $original_filename, string $mime_type ): ?array {
+		if ( ! is_readable( $file_path ) ) {
+			$this->last_error = 'File not readable: ' . $file_path;
+			return null;
+		}
+
+		$boundary = wp_generate_password( 24, false );
+
+		$response = wp_remote_post(
+			$this->endpoint( '/assets' ),
+			array(
+				'headers' => array(
+					'Authorization' => 'Bearer ' . $this->resolve_api_token(),
+					'Accept'        => 'application/json',
+					'Content-Type'  => 'multipart/form-data; boundary=' . $boundary,
+				),
+				'body'    => $this->build_multipart_body( $boundary, $file_path, $original_filename, $mime_type ),
+				'timeout' => 60,
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			$this->last_error = $response->get_error_message();
+			return null;
+		}
+
+		$code = wp_remote_retrieve_response_code( $response );
+		$data = json_decode( wp_remote_retrieve_body( $response ), true );
+		$data = is_array( $data ) ? $data : array();
+
+		if ( 201 === $code ) {
+			$uuid = $data['data']['uuid'] ?? $data['uuid'] ?? null;
+			return $uuid ? array( 'uuid' => $uuid, 'reused' => false ) : null;
+		}
+		if ( 409 === $code ) {
+			$uuid = $data['existing_uuid'] ?? null;
+			return $uuid ? array( 'uuid' => $uuid, 'reused' => true ) : null;
+		}
+
+		$this->last_error = $data['message'] ?? sprintf( 'Upload failed with HTTP %d', $code );
+		return null;
+	}
+
+	/**
+	 * Get a DynamicDelivery transform URL for on-the-fly image processing.
+	 *
+	 * @param string $uuid Asset UUID.
+	 * @param array  $options Transform options: w, h, fit, format, q, gravity.
+	 * @return string The API transform URL (302-redirects to signed imgproxy URL).
+	 */
+	public function get_transform_url( string $uuid, array $options = array() ): string {
+		$params = array();
+		if ( isset( $options['w'] ) ) {
+			$params['w'] = (int) $options['w'];
+		}
+		if ( isset( $options['h'] ) ) {
+			$params['h'] = (int) $options['h'];
+		}
+		if ( isset( $options['fit'] ) ) {
+			$params['fit'] = $options['fit'];
+		}
+		if ( isset( $options['format'] ) ) {
+			$params['format'] = $options['format'];
+		}
+		if ( isset( $options['q'] ) ) {
+			$params['q'] = (int) $options['q'];
+		}
+		if ( isset( $options['gravity'] ) ) {
+			$params['gravity'] = $options['gravity'];
+		}
+
+		$query = ! empty( $params ) ? '?' . http_build_query( $params ) : '';
+		return $this->api_url . '/api/v1/media/' . $uuid . '/transform' . $query;
+	}
+
+	/**
+	 * Get a DynamicDelivery transform URL using a named Image Style preset.
+	 *
+	 * @param string $uuid Asset UUID.
+	 * @param int|string $image_style_id Image Style ID.
+	 * @return string The API transform URL.
+	 */
+	public function get_transform_url_by_style( string $uuid, $image_style_id ): string {
+		return $this->api_url . '/api/v1/media/' . $uuid . '/transform/' . $image_style_id;
+	}
+
+	/**
+	 * Builds a raw multipart/form-data body for a single file field.
+	 *
+	 * wp_remote_post() passes a string 'body' through as-is (only arrays get
+	 * http_build_query()'d), so this is the standard way to POST a real file
+	 * upload through the WP HTTP API without a dedicated multipart helper.
+	 */
+	protected function build_multipart_body( string $boundary, string $file_path, string $filename, string $mime_type ): string {
+		$eol  = "\r\n";
+		$body  = '--' . $boundary . $eol;
+		$body .= 'Content-Disposition: form-data; name="file"; filename="' . $filename . '"' . $eol;
+		$body .= 'Content-Type: ' . $mime_type . $eol . $eol;
+		$body .= file_get_contents( $file_path ) . $eol;
+		$body .= '--' . $boundary . '--' . $eol;
+		return $body;
 	}
 
 	public function report_usage( string $uuid, string $post_type, int $post_id, string $post_url ): void {
