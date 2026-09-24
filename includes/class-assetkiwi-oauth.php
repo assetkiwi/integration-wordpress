@@ -35,7 +35,7 @@ class AssetKiwi_OAuth {
 			'code_challenge_method' => 'S256',
 		);
 
-		return get_option( 'assetkiwi_oauth_authorize_url' ) . '?' . http_build_query( $params );
+		return self::get_authorize_url() . '?' . http_build_query( $params );
 	}
 
 	/**
@@ -45,7 +45,7 @@ class AssetKiwi_OAuth {
 	 */
 	public static function exchange_code( string $code, string $code_verifier ): ?array {
 		$response = wp_remote_post(
-			get_option( 'assetkiwi_oauth_token_url' ),
+			self::get_token_url(),
 			array(
 				'body'    => array(
 					'grant_type'    => 'authorization_code',
@@ -95,5 +95,23 @@ class AssetKiwi_OAuth {
 	 */
 	public static function get_redirect_uri(): string {
 		return admin_url( 'admin-post.php?action=assetkiwi_oauth_callback' );
+	}
+
+	/**
+	 * The asset.kiwi OAuth2 authorization endpoint, derived from the API URL.
+	 *
+	 * asset.kiwi's OAuth routes are fixed (/oauth/authorize, /oauth/token), so
+	 * there's no need to make the admin type them in separately — they'd just
+	 * be another way to get the DAM URL wrong.
+	 */
+	public static function get_authorize_url(): string {
+		return rtrim( (string) get_option( 'assetkiwi_api_url', '' ), '/' ) . '/oauth/authorize';
+	}
+
+	/**
+	 * The asset.kiwi OAuth2 token endpoint, derived from the API URL.
+	 */
+	public static function get_token_url(): string {
+		return rtrim( (string) get_option( 'assetkiwi_api_url', '' ), '/' ) . '/oauth/token';
 	}
 }

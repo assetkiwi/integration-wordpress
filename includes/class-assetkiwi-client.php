@@ -27,9 +27,12 @@ class AssetKiwi_Client {
 	/**
 	 * Resolve the API token to use for the current request.
 	 *
-	 * In per-user OAuth mode, prefers the current user's OAuth access token
-	 * and falls back to the shared API token. In shared token mode, always
-	 * returns the shared token.
+	 * In per-user OAuth mode, a logged-in user MUST have their own OAuth
+	 * access token — falling back to the shared API token here would
+	 * silently bypass the "each user connects individually" requirement and
+	 * the browser would never prompt the user to connect. Only genuinely
+	 * anonymous requests (no logged-in user at all) fall back to the shared
+	 * token. In shared token mode, always returns the shared token.
 	 */
 	private function resolve_api_token(): ?string {
 		if ( ! class_exists( 'AssetKiwi_OAuth' ) || ! AssetKiwi_OAuth::is_enabled() ) {
@@ -38,7 +41,7 @@ class AssetKiwi_Client {
 
 		$user_id = get_current_user_id();
 		if ( $user_id ) {
-			return AssetKiwi_OAuth::get_token( $user_id ) ?? $this->api_token;
+			return AssetKiwi_OAuth::get_token( $user_id );
 		}
 
 		return $this->api_token;
@@ -46,7 +49,7 @@ class AssetKiwi_Client {
 
 	protected function default_headers(): array {
 		return array(
-			'Authorization' => 'Bearer ' . $this->resolve_api_token(),
+			'Authorization' => 'Bearer ' . ( $this->resolve_api_token() ?? '' ),
 			'Accept'        => 'application/json',
 		);
 	}
@@ -155,7 +158,7 @@ class AssetKiwi_Client {
 			$this->endpoint( '/assets' ),
 			array(
 				'headers' => array(
-					'Authorization' => 'Bearer ' . $this->resolve_api_token(),
+					'Authorization' => 'Bearer ' . ( $this->resolve_api_token() ?? '' ),
 					'Accept'        => 'application/json',
 					'Content-Type'  => 'multipart/form-data; boundary=' . $boundary,
 				),

@@ -18,6 +18,14 @@ class AssetKiwi_Media {
 	}
 
 	public function enqueue_assets( string $hook ): void {
+		// admin_enqueue_scripts fires on every admin screen, including ones a
+		// Subscriber can reach (profile.php). Without this gate the
+		// 'assetkiwi_media' nonce below is printed into their page, handing
+		// them the one credential the AJAX handlers check.
+		if ( ! current_user_can( 'upload_files' ) ) {
+			return;
+		}
+
 		// Only load on pages that include the media modal.
 		if ( ! did_action( 'wp_enqueue_media' ) ) {
 			wp_enqueue_media();
@@ -73,6 +81,13 @@ class AssetKiwi_Media {
 	public function ajax_browse(): void {
 		check_ajax_referer( 'assetkiwi_media', 'nonce' );
 
+		// A nonce proves intent, not authority: wp_ajax_* fires for EVERY
+		// logged-in role. Without this check any Subscriber who gets hold of
+		// the nonce can page through the entire DAM library.
+		if ( ! current_user_can( 'upload_files' ) ) {
+			wp_send_json_error( __( 'Insufficient permissions.', 'assetkiwi-connect' ), 403 );
+		}
+
 		$client = assetkiwi_client();
 
 		$params = array(
@@ -120,6 +135,13 @@ class AssetKiwi_Media {
 	 */
 	public function ajax_select_asset(): void {
 		check_ajax_referer( 'assetkiwi_media', 'nonce' );
+
+		// This handler sideloads a remote file and creates an attachment, so it
+		// is a write to the media library — gate it on the same capability core
+		// requires for an upload.
+		if ( ! current_user_can( 'upload_files' ) ) {
+			wp_send_json_error( __( 'Insufficient permissions.', 'assetkiwi-connect' ), 403 );
+		}
 
 		$uuid = isset( $_POST['uuid'] ) ? sanitize_text_field( wp_unslash( $_POST['uuid'] ) ) : '';
 		if ( ! $uuid ) {

@@ -54,6 +54,13 @@ class AssetKiwi_Block {
 	public function ajax_get_asset(): void {
 		check_ajax_referer( 'assetkiwi_block', 'nonce' );
 
+		// wp_ajax_* fires for every logged-in role, and a nonce is not an
+		// authorization check. Gate on the capability the block editor itself
+		// requires, since that is the only context this endpoint serves.
+		if ( ! current_user_can( 'edit_posts' ) ) {
+			wp_send_json_error( __( 'Insufficient permissions.', 'assetkiwi-connect' ), 403 );
+		}
+
 		$uuid = isset( $_POST['uuid'] ) ? sanitize_text_field( wp_unslash( $_POST['uuid'] ) ) : '';
 		if ( ! $uuid ) {
 			wp_send_json_error( 'Missing UUID.' );

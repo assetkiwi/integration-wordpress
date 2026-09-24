@@ -31,8 +31,6 @@ class AssetKiwi_Settings {
 		register_setting( 'assetkiwi_settings', 'assetkiwi_oauth_mode', array( 'sanitize_callback' => 'sanitize_text_field' ) );
 		register_setting( 'assetkiwi_settings', 'assetkiwi_oauth_client_id', array( 'sanitize_callback' => 'sanitize_text_field' ) );
 		register_setting( 'assetkiwi_settings', 'assetkiwi_oauth_client_secret', array( 'sanitize_callback' => 'sanitize_text_field' ) );
-		register_setting( 'assetkiwi_settings', 'assetkiwi_oauth_authorize_url', array( 'sanitize_callback' => 'esc_url_raw' ) );
-		register_setting( 'assetkiwi_settings', 'assetkiwi_oauth_token_url', array( 'sanitize_callback' => 'esc_url_raw' ) );
 		register_setting( 'assetkiwi_settings', 'assetkiwi_oauth_scopes', array( 'sanitize_callback' => array( $this, 'sanitize_oauth_scopes' ) ) );
 
 		add_settings_section( 'assetkiwi_main', __( 'API Connection', 'assetkiwi-connect' ), '__return_false', 'assetkiwi-connect' );
@@ -84,20 +82,6 @@ class AssetKiwi_Settings {
 			'assetkiwi_oauth'
 		);
 		add_settings_field(
-			'assetkiwi_oauth_authorize_url',
-			__( 'Authorize URL', 'assetkiwi-connect' ),
-			array( $this, 'field_oauth_authorize_url' ),
-			'assetkiwi-connect',
-			'assetkiwi_oauth'
-		);
-		add_settings_field(
-			'assetkiwi_oauth_token_url',
-			__( 'Token URL', 'assetkiwi-connect' ),
-			array( $this, 'field_oauth_token_url' ),
-			'assetkiwi-connect',
-			'assetkiwi_oauth'
-		);
-		add_settings_field(
 			'assetkiwi_oauth_scopes',
 			__( 'Scopes', 'assetkiwi-connect' ),
 			array( $this, 'field_oauth_scopes' ),
@@ -128,7 +112,7 @@ class AssetKiwi_Settings {
 	}
 
 	public function section_oauth(): void {
-		echo '<p class="description">' . esc_html__( 'Optional: configure OAuth2 so each WordPress user gets their own DAM identity. When enabled, users authenticate individually and the API Token above serves only as a fallback.', 'assetkiwi-connect' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'Optional: configure OAuth2 so each WordPress user gets their own DAM identity. When enabled, users authenticate individually — the API Token above is used only for anonymous/system requests, not as a fallback for a user who hasn\'t connected yet. The authorization and token endpoints are derived automatically from the API URL above.', 'assetkiwi-connect' ) . '</p>';
 	}
 
 	public function field_oauth_mode(): void {
@@ -158,16 +142,6 @@ class AssetKiwi_Settings {
 	public function field_oauth_client_secret(): void {
 		$value = esc_attr( get_option( 'assetkiwi_oauth_client_secret', '' ) );
 		echo '<input type="password" id="assetkiwi_oauth_client_secret" name="assetkiwi_oauth_client_secret" value="' . $value . '" class="regular-text assetkiwi-oauth-field" autocomplete="off" />';
-	}
-
-	public function field_oauth_authorize_url(): void {
-		$value = esc_attr( get_option( 'assetkiwi_oauth_authorize_url', '' ) );
-		echo '<input type="url" id="assetkiwi_oauth_authorize_url" name="assetkiwi_oauth_authorize_url" value="' . $value . '" class="regular-text assetkiwi-oauth-field" placeholder="https://dam.example.com/oauth/authorize" />';
-	}
-
-	public function field_oauth_token_url(): void {
-		$value = esc_attr( get_option( 'assetkiwi_oauth_token_url', '' ) );
-		echo '<input type="url" id="assetkiwi_oauth_token_url" name="assetkiwi_oauth_token_url" value="' . $value . '" class="regular-text assetkiwi-oauth-field" placeholder="https://dam.example.com/oauth/token" />';
 	}
 
 	public function field_oauth_scopes(): void {

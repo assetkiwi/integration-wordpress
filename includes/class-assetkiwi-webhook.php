@@ -6,6 +6,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class AssetKiwi_Webhook {
 
+	/**
+	 * How far out of date a delivery may be before it is refused, in seconds.
+	 */
+	private const MAX_AGE_SECONDS = 300;
+
 	public function register(): void {
 		add_action( 'rest_api_init', array( $this, 'register_route' ) );
 	}
@@ -30,9 +35,31 @@ class AssetKiwi_Webhook {
 			return new WP_REST_Response( array( 'error' => 'Webhook secret not configured.' ), 401 );
 		}
 
+		// The sender (Modules\Webhooks\Services\WebhookDispatcher::send()) signs
+		// the TIMESTAMP AND BODY together and ships the timestamp alongside:
+		//
+		//   X-Webhook-Timestamp: <unix>
+		//   X-Webhook-Signature: hash_hmac('sha256', "{$ts}.{$body}", $secret)
+		//
+		// Binding the timestamp into the signed message is what makes replay
+		// detectable — a bare-body signature stays valid forever, so a captured
+		// delivery could be resent indefinitely. Deliveries outside the window
+		// are refused even when the HMAC itself is intact.
+		$timestamp = (string) $request->get_header( 'x_webhook_timestamp' );
+
+		if ( '' === $timestamp || ! ctype_digit( $timestamp ) ) {
+			error_log( 'asset.kiwi: webhook rejected — missing or malformed timestamp.' );
+			return new WP_REST_Response( array( 'error' => 'Missing or malformed timestamp' ), 401 );
+		}
+
+		if ( abs( time() - (int) $timestamp ) > self::MAX_AGE_SECONDS ) {
+			error_log( 'asset.kiwi: webhook rejected — timestamp outside the accepted window.' );
+			return new WP_REST_Response( array( 'error' => 'Timestamp outside the accepted window' ), 401 );
+		}
+
 		$signature = $request->get_header( 'x_webhook_signature' );
 		$body      = $request->get_body();
-		$expected  = hash_hmac( 'sha256', $body, $secret );
+		$expected  = hash_hmac( 'sha256', $timestamp . '.' . $body, $secret );
 
 		if ( ! hash_equals( $expected, (string) $signature ) ) {
 			error_log( 'asset.kiwi: webhook signature verification failed.' );
